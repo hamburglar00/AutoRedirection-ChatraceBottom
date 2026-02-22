@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Redirección WhatsApp</title>
-
   <meta name="robots" content="noindex, nofollow" />
   <style>
     html, body {
@@ -25,98 +24,126 @@
   </style>
 </head>
 <body>
+
   <div class="loading">Redirigiendo a un canal activo de WhatsApp...</div>
 
   <script>
-    /********************************************
-     * REDIRECTOR DE WHATSAPP ACTIVO
-     * Obtiene números desde tu API y redirige a uno aleatorio.
-     ********************************************/
-    const SERVICE_URL = "/api/get-random-phone";  // Tu endpoint Vercel
-    const FALLBACK = [{ phone: "+5491169789243", weight: 1 }];
-    const TTL_MS = 5 * 60 * 1000;
-    const LS_KEY = `active_whatsapp_numbers_by_agency:1`;
+  /********************************************
+   * CONFIGURACIÓN
+   ********************************************/
+  const USE_API = true;   // true = números desde API  |  false = números desde phones.json
 
-    function fetchWithTimeout(url, opt = {}, ms = 2500) {
-      const ctrl = new AbortController();
-      const id = setTimeout(() => ctrl.abort(), ms);
-      return fetch(url, { ...opt, signal: ctrl.signal }).finally(() => clearTimeout(id));
+  const API_URL      = "/api/get-random-phone";
+  const JSON_FILE    = "./phones.json";
+  const FALLBACK     = [{ phone: "5491169789243", weight: 1 }];
+  const TTL_MS       = 5 * 60 * 1000;
+  const LS_KEY       = "active_whatsapp_numbers";
+  const WA_MESSAGE   = "¡Hola! Me pasás mi usuario 🚀";
+
+  /********************************************
+   * Helpers
+   ********************************************/
+  function fetchWithTimeout(url, opts = {}, ms = 2500) {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), ms);
+    return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
+  }
+
+  function getCache() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || "null"); }
+    catch { return null; }
+  }
+
+  function setCache(numbers) {
+    localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), numbers }));
+  }
+
+  function normalize(list) {
+    return (Array.isArray(list) ? list : [])
+      .map(n => ({
+        phone: String(n.phone || n.phone_number || "").replace(/\D+/g, "").trim(),
+        weight: Number(n.weight || 1)
+      }))
+      .filter(n => /^\d{8,17}$/.test(n.phone) && n.weight > 0);
+  }
+
+  function parseApiPayload(data) {
+    if (data && typeof data === "object" && (typeof data.phone_number === "string" || typeof data.phone_number === "number")) {
+      return [{ phone: String(data.phone_number), weight: 1 }];
     }
+    if (typeof data === "string") return [{ phone: data, weight: 1 }];
+    const arr =
+      (Array.isArray(data?.numbers) && data.numbers) ||
+      (Array.isArray(data?.phone_numbers) && data.phone_numbers) ||
+      (Array.isArray(data?.whatsapp) && data.whatsapp) ||
+      (Array.isArray(data) && data) || [];
+    return arr.map(item => {
+      if (typeof item === "string") return { phone: item, weight: 1 };
+      const phone = String(item?.phone ?? item?.phone_number ?? "").trim();
+      const w = Number(item?.weight ?? 1);
+      return { phone, weight: isFinite(w) && w > 0 ? w : 1 };
+    });
+  }
 
-    function getCache() {
-      try { return JSON.parse(localStorage.getItem(LS_KEY) || "null"); }
-      catch { return null; }
+  function pickWeightedRandom(list) {
+    const total = list.reduce((s, it) => s + it.weight, 0);
+    let r = Math.random() * total;
+    for (const it of list) { r -= it.weight; if (r <= 0) return it; }
+    return list[list.length - 1];
+  }
+
+  function buildWaUrl(phone, text) {
+    const clean = phone.replace(/\D/g, "");
+    const encoded = text ? encodeURIComponent(text) : "";
+    return `https://api.whatsapp.com/send?phone=${clean}${encoded ? `&text=${encoded}` : ""}`;
+  }
+
+  /********************************************
+   * Obtener números según USE_API
+   ********************************************/
+  async function fetchFromApi() {
+    const res = await fetchWithTimeout(API_URL, { headers: { "Cache-Control": "no-store" } }, 2500);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    return normalize(parseApiPayload(data));
+  }
+
+  async function fetchFromJson() {
+    const res = await fetch(JSON_FILE);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    return normalize(Array.isArray(data) ? data.map(item => {
+      if (typeof item === "string") return { phone: item, weight: 1 };
+      return item;
+    }) : []);
+  }
+
+  async function loadNumbers() {
+    const cached = getCache();
+    try {
+      const numbers = USE_API ? await fetchFromApi() : await fetchFromJson();
+      if (numbers.length) { setCache(numbers); return numbers; }
+      throw new Error("Empty list");
+    } catch (e) {
+      if (cached?.numbers?.length && Date.now() - (cached.ts || 0) < TTL_MS) return cached.numbers;
+      return normalize(FALLBACK);
     }
+  }
 
-    function setCache(numbers) {
-      localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), numbers }));
+  /********************************************
+   * Redirección
+   ********************************************/
+  async function redirect() {
+    const list = await loadNumbers();
+    if (!list.length) {
+      document.querySelector(".loading").textContent = "Error: no hay números activos.";
+      return;
     }
+    const chosen = pickWeightedRandom(list);
+    window.location.replace(buildWaUrl(chosen.phone, WA_MESSAGE));
+  }
 
-    function parseApiPayload(data) {
-      if (data && typeof data === "object" && (typeof data.phone_number === "string" || typeof data.phone_number === "number")) {
-        return [{ phone: String(data.phone_number), weight: 1 }];
-      }
-      if (typeof data === "string") return [{ phone: data, weight: 1 }];
-      const arr =
-        (Array.isArray(data?.numbers) && data.numbers) ||
-        (Array.isArray(data?.phone_numbers) && data.phone_numbers) ||
-        (Array.isArray(data) && data) || [];
-      return arr.map(item => {
-        if (typeof item === "string") return { phone: item, weight: 1 };
-        const phone = String(item?.phone ?? item?.phone_number ?? "").trim();
-        const w = Number(item?.weight ?? 1);
-        return { phone, weight: isFinite(w) && w > 0 ? w : 1 };
-      });
-    }
-
-    function normalizeNumbers(list) {
-      return (Array.isArray(list) ? list : [])
-        .map(n => ({ phone: String(n.phone || "").trim(), weight: Number(n.weight || 1) }))
-        .filter(n => /^\+?\d{8,17}$/.test(n.phone) && n.weight > 0);
-    }
-
-    async function loadNumbersOnce() {
-      const cached = getCache();
-      try {
-        const res = await fetchWithTimeout(SERVICE_URL, { headers: { "Cache-Control": "no-store" } }, 2500);
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const data = await res.json();
-        const parsed = parseApiPayload(data);
-        const clean = normalizeNumbers(parsed);
-        if (clean.length) { setCache(clean); return clean; }
-        throw new Error("Invalid payload");
-      } catch (e) {
-        const ok = cached?.numbers?.length && Date.now() - (cached.ts || 0) < TTL_MS;
-        return ok ? cached.numbers : normalizeNumbers(FALLBACK);
-      }
-    }
-
-    function pickWeightedRandom(list) {
-      const total = list.reduce((s, it) => s + (Number(it.weight) || 1), 0);
-      let r = Math.random() * total;
-      for (const it of list) { r -= (Number(it.weight) || 1); if (r <= 0) return it; }
-      return list[list.length - 1];
-    }
-
-    function buildWaUrl(phone, text = "") {
-      const msg = text ? encodeURIComponent(text) : "";
-      const cleanPhone = phone.replace(/\D/g, "");
-      return `https://api.whatsapp.com/send?phone=${cleanPhone}${msg ? `&text=${msg}` : ""}`;
-    }
-
-    async function redirectToWhatsApp() {
-      const list = await loadNumbersOnce();
-      if (!list.length) {
-        document.querySelector(".loading").textContent = "Error: no hay números activos.";
-        return;
-      }
-      const chosen = pickWeightedRandom(list);
-      const mensaje = "¡Hola! Me pasás mi usuario 🚀";
-      const waUrl = buildWaUrl(chosen.phone, mensaje);
-      window.location.replace(waUrl);
-    }
-
-    redirectToWhatsApp();
+  redirect();
   </script>
 </body>
 </html>
