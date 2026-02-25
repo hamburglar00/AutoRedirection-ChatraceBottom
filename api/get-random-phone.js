@@ -1,55 +1,161 @@
 // /api/get-random-phone.js
-export default async function handler(req, res) {
+// ✅ API GENÉRICA
+// ✅ agency ES OBLIGATORIO (?agency=XX)
+// ❌ NO defaults
+// ✅ Plan A/B/C/D
+
+const CONFIG = {
+  BRAND_NAME: "Ganamos",
+
+  // Soporte (Plan D)
+  SUPPORT_FALLBACK_ENABLED: false,
+  SUPPORT_FALLBACK_NUMBER: "",
+
+  TIMEOUT_MS: 2500,
+  MAX_RETRIES: 2,
+
+  UPSTREAM_BASE: "https://api.asesadmin.com/api/v1",
+};
+
+// Cache por agency (memoria serverless)
+let LAST_GOOD_BY_AGENCY = Object.create(null);
+
+const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+function normalizePhone(raw) {
+  let phone = String(raw || "").replace(/\D+/g, "");
+  if (phone.length === 10) phone = "54" + phone; // AR
+  if (!phone || phone.length < 8) return null;
+  return phone;
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const started = Date.now();
   try {
-    // ⚙️ EDITA TU AGENCY_ID AQUÍ
-    const AGENCY_ID = 17;
-
-    // ✅ Nuevo endpoint (estructura nueva)
-    const API_URL = `https://api.asesadmin.com/api/v1/agency/${AGENCY_ID}/random-contact`;
-
-    const response = await fetch(API_URL, {
+    const res = await fetch(url, {
       headers: { "Cache-Control": "no-store" },
+      signal: ctrl.signal,
     });
 
-    if (!response.ok) {
-      throw new Error(`Error HTTP ${response.status}`);
+    const ms = Date.now() - started;
+
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`);
+      err.http_status = res.status;
+      err.ms = ms;
+      throw err;
     }
 
-    const data = await response.json();
+    const json = await res.json();
+    return { json, ms, status: res.status };
+  } finally {
+    clearTimeout(t);
+  }
+}
 
-    // ✅ Landing tipo B => números activos NO ADS
-    const list = data?.whatsapp || [];
+export default async function handler(req, res) {
+  const startedAt = Date.now();
 
-    if (!Array.isArray(list) || list.length === 0) {
-      throw new Error("No hay números disponibles en whatsapp (normal)");
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+
+  // ============================================================
+  // ✅ agency ES OBLIGATORIO
+  // ============================================================
+  const agencyId = Number(req.query.agency);
+
+  if (!Number.isInteger(agencyId) || agencyId <= 0) {
+    return res.status(400).json({
+      error: "AGENCY_REQUIRED",
+      message: "Debe enviarse ?agency=<id>",
+    });
+  }
+
+  const lastGood = LAST_GOOD_BY_AGENCY[String(agencyId)] || null;
+
+  try {
+    const API_URL = `${CONFIG.UPSTREAM_BASE}/agency/${agencyId}/random-contact`;
+
+    // ============================================================
+    // PLAN A: upstream con retry
+    // ============================================================
+    let data = null;
+    let upstreamMeta = { attempts: 0, last_error: null };
+
+    for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES && !data; attempt++) {
+      upstreamMeta.attempts = attempt;
+      try {
+        const r = await fetchJsonWithTimeout(API_URL, CONFIG.TIMEOUT_MS);
+        data = r.json;
+        upstreamMeta.ms = r.ms;
+        upstreamMeta.status = r.status;
+      } catch (e) {
+        upstreamMeta.last_error = e?.message || "unknown";
+      }
     }
 
-    // ✅ Elegimos 1 número al azar
-    let phone = String(list[Math.floor(Math.random() * list.length)] || "").trim();
+    if (!data) throw new Error("Upstream no respondió");
 
-    // Normalización: solo dígitos (tu HTML lo acepta)
-    phone = phone.replace(/\D+/g, "");
+    // ============================================================
+    // PLAN B: whatsapp normal
+    // ============================================================
+    const normalList = Array.isArray(data?.whatsapp) ? data.whatsapp : [];
+    if (!normalList.length) throw new Error("whatsapp vacío");
 
-    // Opcional AR: si viene 10 dígitos, antepone 54
-    if (phone.length === 10) phone = "54" + phone;
+    const rawPhone = pickRandom(normalList);
+    const phone = normalizePhone(rawPhone);
+    if (!phone) throw new Error("Número inválido");
 
-    if (!phone || phone.length < 8) {
-      throw new Error("No se encontró número válido");
-    }
+    const meta = {
+      agency_id: agencyId,
+      source: "whatsapp",
+      ts: new Date().toISOString(),
+      normal_len: normalList.length,
+    };
 
-    // Evitar cache también en la respuesta
-    res.setHeader("Cache-Control", "no-store, max-age=0");
+    LAST_GOOD_BY_AGENCY[String(agencyId)] = { number: phone, meta };
 
-    // ✅ IMPORTANTE: devolvemos formato “viejo” compatible con tu HTML:
-    // parseApiPayload() detecta phone_number y arma [{phone, weight}]
-    return res.status(200).json({ phone_number: phone });
+    return res.status(200).json({
+      number: phone,
+      name: CONFIG.BRAND_NAME,
+      agency_id: agencyId,
+      ms: Date.now() - startedAt,
+    });
   } catch (err) {
-    console.error("❌ Error al obtener número:", err?.message || err);
+    // ============================================================
+    // PLAN C: last good por agency
+    // ============================================================
+    if (lastGood?.number) {
+      return res.status(200).json({
+        number: lastGood.number,
+        name: "LastGoodCache",
+        agency_id: agencyId,
+        cache: true,
+        error: err?.message,
+        ms: Date.now() - startedAt,
+      });
+    }
 
-    // ❌ SIN FALLBACK: igual que tu API anterior
-    return res.status(500).json({
-      error: "No se pudo obtener número",
-      details: err?.message || String(err),
+    // ============================================================
+    // PLAN D: soporte
+    // ============================================================
+    if (CONFIG.SUPPORT_FALLBACK_ENABLED) {
+      return res.status(200).json({
+        number: CONFIG.SUPPORT_FALLBACK_NUMBER,
+        name: "SupportFallback",
+        agency_id: agencyId,
+        fallback: true,
+        error: err?.message,
+        ms: Date.now() - startedAt,
+      });
+    }
+
+    return res.status(503).json({
+      error: "NO_NUMBER_AVAILABLE",
+      agency_id: agencyId,
+      details: err?.message,
     });
   }
 }
