@@ -3,147 +3,435 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Redirección WhatsApp</title>
-  <meta name="robots" content="noindex, nofollow" />
+  <base href="/" />
+  <title>Ganamos</title>
+
+  <link rel="icon" href="imagenes/logo.png" />
+  <link rel="preload" as="image" href="imagenes/background.png">
+  <link rel="preload" as="image" href="imagenes/perro.png">
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Prefetch API -->
+  <link rel="preconnect" href="https://api.asesadmin.com" crossorigin>
+  <link rel="dns-prefetch" href="https://api.asesadmin.com">
+
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #000;
-      color: #fff;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    html { visibility: hidden; }
+
+    /* Modal simple */
+    #telegramModal {
+      display: none;
+      position: fixed;
+      z-index: 9999;
+      left: 0; top: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      justify-content: center; align-items: center;
+      padding: 18px;
     }
-    .loading {
+    #telegramModalContent {
+      background: #150028;
+      color: #ffbc0f;
+      padding: 20px;
+      border-radius: 12px;
       text-align: center;
-      font-size: 14px;
-      color: #aaa;
+      max-width: 360px;
+      width: 100%;
+      box-shadow: 0 16px 60px rgba(0,0,0,.55);
+      white-space: pre-line;
+    }
+    #telegramModal button {
+      margin-top: 12px;
+      padding: 8px 14px;
+      border: none;
+      border-radius: 8px;
+      background: #ffbc0f;
+      color: #150028;
+      font-weight: 800;
+      cursor: pointer;
     }
   </style>
-</head>
-<body>
-
-  <div class="loading">Redirigiendo a un canal activo de WhatsApp...</div>
 
   <script>
-  /********************************************
-   * CONFIGURACIÓN
-   ********************************************/
-  const USE_API = true;   // true = números desde API  |  false = números desde phones.json
+    /********************************************
+     * AGENCY ID DESDE URL (GENÉRICO, SIN DEFAULT)
+     * Soporta:
+     *   /?agency=123
+     *   /a/123
+     ********************************************/
+    function getAgencyId() {
+      // 1) query ?agency=123
+      const q = new URLSearchParams(window.location.search);
+      const fromQuery = Number(q.get("agency"));
+      if (Number.isInteger(fromQuery) && fromQuery > 0) return fromQuery;
 
-  const API_URL      = "/api/get-random-phone";
-  const JSON_FILE    = "./phones.json";
-  const FALLBACK     = [{ phone: "5491169789243", weight: 1 }];
-  const TTL_MS       = 5 * 60 * 1000;
-  const LS_KEY       = "active_whatsapp_numbers";
-  const WA_MESSAGE   = "¡Hola! Me pasás mi usuario 🚀";
+      // 2) path /a/123 (tolerante)
+      const m = window.location.pathname.match(/\/a\/(\d+)/);
+      if (m) {
+        const fromPath = Number(m[1]);
+        if (Number.isInteger(fromPath) && fromPath > 0) return fromPath;
+      }
 
-  /********************************************
-   * Helpers
-   ********************************************/
-  function fetchWithTimeout(url, opts = {}, ms = 2500) {
-    const ctrl = new AbortController();
-    const id = setTimeout(() => ctrl.abort(), ms);
-    return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
-  }
-
-  function getCache() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || "null"); }
-    catch { return null; }
-  }
-
-  function setCache(numbers) {
-    localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), numbers }));
-  }
-
-  function normalize(list) {
-    return (Array.isArray(list) ? list : [])
-      .map(n => ({
-        phone: String(n.phone || n.phone_number || "").replace(/\D+/g, "").trim(),
-        weight: Number(n.weight || 1)
-      }))
-      .filter(n => /^\d{8,17}$/.test(n.phone) && n.weight > 0);
-  }
-
-  function parseApiPayload(data) {
-    if (data && typeof data === "object" && (typeof data.phone_number === "string" || typeof data.phone_number === "number")) {
-      return [{ phone: String(data.phone_number), weight: 1 }];
+      return null; // sin agency
     }
-    if (typeof data === "string") return [{ phone: data, weight: 1 }];
-    const arr =
-      (Array.isArray(data?.numbers) && data.numbers) ||
-      (Array.isArray(data?.phone_numbers) && data.phone_numbers) ||
-      (Array.isArray(data?.whatsapp) && data.whatsapp) ||
-      (Array.isArray(data) && data) || [];
-    return arr.map(item => {
-      if (typeof item === "string") return { phone: item, weight: 1 };
-      const phone = String(item?.phone ?? item?.phone_number ?? "").trim();
-      const w = Number(item?.weight ?? 1);
-      return { phone, weight: isFinite(w) && w > 0 ? w : 1 };
+
+    const AGENCY_ID = getAgencyId();
+    console.log("Agency ID:", AGENCY_ID, "| path:", location.pathname, "| search:", location.search);
+  </script>
+
+  <script>
+    /********************************************
+     * REDIRECCIÓN ALEATORIA (sin parpadeo)
+     ********************************************/
+    const REDIRECT_PROBABILITY = 0;
+    const REDIRECT_URL = "https://ganamosnet.one";
+
+    if (Math.random() < REDIRECT_PROBABILITY) {
+      window.location.replace(REDIRECT_URL);
+    } else {
+      document.addEventListener("DOMContentLoaded", () => {
+        document.documentElement.style.visibility = "visible";
+      });
+    }
+  </script>
+</head>
+
+<body>
+  <main class="gn-stage">
+    <div class="gn-wrap" id="cardContainer"></div>
+  </main>
+
+  <!-- Modal (lo usamos para: falta agency / telegram no disponible) -->
+  <div id="telegramModal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div id="telegramModalContent">
+      <div id="telegramModalMsg">Mensaje</div>
+      <button id="closeTelegramModal" type="button">Cerrar</button>
+    </div>
+  </div>
+
+  <script>
+    /********************************************
+     * HELPERS MODAL
+     ********************************************/
+    const telegramModal = document.getElementById("telegramModal");
+    const telegramModalMsg = document.getElementById("telegramModalMsg");
+    const closeTelegramModal = document.getElementById("closeTelegramModal");
+
+    function openModal(msg) {
+      if (telegramModalMsg) telegramModalMsg.textContent = msg || "";
+      if (telegramModal) {
+        telegramModal.style.display = "flex";
+        telegramModal.setAttribute("aria-hidden", "false");
+      }
+    }
+    function closeModal() {
+      if (telegramModal) {
+        telegramModal.style.display = "none";
+        telegramModal.setAttribute("aria-hidden", "true");
+      }
+    }
+
+    if (closeTelegramModal) {
+      closeTelegramModal.addEventListener("click", closeModal);
+    }
+    if (telegramModal) {
+      telegramModal.addEventListener("click", (e) => {
+        if (e.target === telegramModal) closeModal();
+      });
+    }
+
+    /********************************************
+     * CONFIGURACIONES AGRUPADAS
+     ********************************************/
+    const CONFIG = {
+      // ✅ GENÉRICO: solo setea URL si existe AGENCY_ID
+      whatsappServiceUrl: AGENCY_ID ? `/api/get-random-phone?agency=${AGENCY_ID}` : null,
+
+      // Si no querés fallback, dejalo: []
+      whatsappFallback: [{ phone: "+549", weight: 1 }],
+
+      whatsappTTL: 5 * 60 * 1000,
+
+      designs: {
+        whatsapp: {
+          probability: 1,
+          render: () => `
+            <img src="imagenes/mascot.webp" style="padding:0 20px;position:absolute;z-index:1;bottom:45vh;left:50%;max-width:200px;transform:translate(-50%,0);" decoding="async" />
+            <div style="position:relative;background:#150028;box-shadow:0 0 0 2px rgba(154,76,255,0.15) inset,0 14px 40px rgba(0,0,0,0.65),0 0 26px rgba(154,76,255,0.35);padding:24px;border-radius:30px;max-width:350px;margin:0 auto;z-index:2;">
+              <img src="imagenes/logo-net-new.png" alt="" style="width:100%;padding:0 50px;max-width:300px;margin:0 auto;display:block;">
+              <h4 style="text-align:center;padding-top:10px;">SI ALGUNA CAJERA NO RESPONDE,<br>CONTACTANOS POR AQUI</h4>
+              <p style="text-align:center;padding-top:20px;font-size:12px;">Juga por Telegram y recibi<br>bono en todas tus cargas</p>
+              <p style="text-align:center;padding-top:10px;font-size:12px;font-style:italic;color:#ffbc0f;"></p>
+
+              <div class="gn-actions" style="max-width:230px;margin:20px auto;display:flex;flex-direction:column;gap:12px;">
+                <a href="#" id="btnContactar" class="gn-btn gn-btn-solid">
+                  <img src="imagenes/whatsapp.png" alt="" class="wa-ic"> WHATSAPP
+                </a>
+
+                <a href="https://ganamosnet.org" target="_blank" rel="noopener" class="gn-btn gn-btn-outline">
+                  <img src="imagenes/rocket_1f680.png" alt="" class="wa-ic"> JUGAR AHORA
+                </a>
+
+                <!-- ✅ Telegram dinámico por agency: href se setea por JS -->
+                <a href="#"
+                   target="_blank"
+                   rel="noopener"
+                   data-telegram="1"
+                   class="gn-btn gn-btn-telegram" style="position:relative;">
+                  <img src="imagenes/telegram.png" alt="" class="wa-ic"> TELEGRAM
+                  <span style="
+                    position:absolute;
+                    top:4px;
+                    right:-4px;
+                    background:#ffbc0f;
+                    color:#150028;
+                    font-size:9px;
+                    font-weight:700;
+                    border-radius:6px;
+                    padding:2px 6px;
+                    box-shadow:0 0 6px rgba(0,0,0,0.4);
+                    text-transform:uppercase;
+                    letter-spacing:0.3px;
+                  ">BONO</span>
+                </a>
+              </div>
+
+              <p style="text-align:center;font-size:8.4px;color:#ffbc0f;margin-top:-5px;">
+                ¡Jugando por Telegram tenés BONO EN TODAS TUS CARGAS!
+              </p>
+            </div>
+          `
+        },
+
+        telegram: {
+          probability: 0,
+          render: () => `
+            <img src="imagenes/mascot.webp" style="padding:0 20px;position:absolute;z-index:1;bottom:22vh;left:50%;max-width:300px;transform:translate(-50%,0);" decoding="async" />
+            <div style="position:relative;background:#150028;box-shadow:0 0 0 2px rgba(76,186,255,0.15) inset,0 14px 40px rgba(0,0,0,0.65),0 0 26px rgba(76,186,255,0.35);padding:24px;border-radius:30px;max-width:350px;margin:0 auto;z-index:2;">
+              <img src="imagenes/logo-net-new.png" alt="" style="width:100%;padding:0 50px;max-width:300px;margin:0 auto;display:block;">
+              <h4 style="text-align:center;padding-top:10px;">TODAS TUS CARGAS CON BONO</h4>
+              <p style="text-align:center;padding-top:20px;font-size:12px;">🚨Nuevo beneficio exclusivo: jugando por Telegram obtenés bono en todas tus cargas y ahora con pagos automáticos al instante.</p>
+              <p style="text-align:center;padding-top:10px;font-size:12px;font-style:italic;color:#ffbc0f;">
+                ¿Aún no tenés Telegram? Descargala y empezá a ganar.
+              </p>
+
+              <div class="gn-actions" style="max-width:200px;margin:20px auto;">
+                <!-- ✅ Telegram dinámico por agency: href se setea por JS -->
+                <a href="#"
+                   target="_blank"
+                   rel="noopener"
+                   data-telegram="1"
+                   class="gn-btn gn-btn-telegram">
+                  <img src="imagenes/telegram.png" alt="" class="wa-ic"> TELEGRAM
+                </a>
+
+                <a href="https://ganamosnet.one" target="_blank" rel="noopener" class="gn-btn gn-btn-outline">
+                  <img src="imagenes/rocket_1f680.png" alt="" class="wa-ic"> JUGAR AHORA
+                </a>
+              </div>
+            </div>
+          `
+        }
+      }
+    };
+
+    /********************************************
+     * ELECCIÓN ALEATORIA DE DISEÑO
+     ********************************************/
+    const rand = Math.random();
+    const design = rand < CONFIG.designs.whatsapp.probability ? "whatsapp" : "telegram";
+    document.getElementById("cardContainer").innerHTML = CONFIG.designs[design].render();
+
+    /********************************************
+     * SI FALTA AGENCY, AVISAMOS Y DESHABILITAMOS CONTACTO
+     ********************************************/
+    if (!AGENCY_ID) {
+      openModal("⚠️ Falta el parámetro de agencia en la URL.\nUsá un link del tipo /a/<id> (por ejemplo: /a/123).");
+
+      const btnContactarMissing = document.getElementById("btnContactar");
+      if (btnContactarMissing) {
+        btnContactarMissing.style.opacity = "0.65";
+        btnContactarMissing.style.pointerEvents = "none";
+        btnContactarMissing.title = "Falta agency en la URL";
+      }
+    }
+
+    /********************************************
+     * TELEGRAM POR AGENCY DESDE /api/get-telegram
+     * (la API devuelve telegram_url o null)
+     ********************************************/
+    async function loadTelegramUrlForAgency(agencyId) {
+      if (!agencyId) return null;
+
+      // cache local por agency (10 min)
+      const CACHE_KEY = `telegram_url_cache:v1:${agencyId}`;
+      const CACHE_TTL = 10 * 60 * 1000;
+
+      try {
+        const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+        if (cached?.ts && (Date.now() - cached.ts < CACHE_TTL) && cached.url) {
+          return cached.url;
+        }
+      } catch {}
+
+      try {
+        const res = await fetch(
+          `/api/get-telegram?agency=${encodeURIComponent(agencyId)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) return null;
+
+        const data = await res.json();
+        const url = data?.telegram_url;
+
+        const valid = typeof url === "string" && url.startsWith("https://t.me/");
+        if (!valid) return null;
+
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), url }));
+        } catch {}
+
+        return url;
+      } catch {
+        return null;
+      }
+    }
+
+    let TELEGRAM_URL = null;
+
+    (async () => {
+      TELEGRAM_URL = await loadTelegramUrlForAgency(AGENCY_ID);
+
+      document.querySelectorAll('a[data-telegram="1"]').forEach((a) => {
+        if (TELEGRAM_URL) {
+          a.href = TELEGRAM_URL;
+          a.dataset.enabled = "1";
+        } else {
+          a.href = "#";
+          a.dataset.enabled = "0";
+        }
+      });
+    })();
+
+    /********************************************
+     * CONTROL TELEGRAM (dinámico por agency)
+     ********************************************/
+    document.addEventListener("click", (e) => {
+      const a = e.target?.closest?.('a[data-telegram="1"]');
+      if (!a) return;
+
+      if (!TELEGRAM_URL) {
+        e.preventDefault();
+        e.stopPropagation();
+        openModal("❌ Telegram no disponible para esta agencia por el momento.");
+      }
     });
-  }
 
-  function pickWeightedRandom(list) {
-    const total = list.reduce((s, it) => s + it.weight, 0);
-    let r = Math.random() * total;
-    for (const it of list) { r -= it.weight; if (r <= 0) return it; }
-    return list[list.length - 1];
-  }
+    /********************************************
+     * LÓGICA WHATSAPP (con agency + cache por agency)
+     ********************************************/
+    if (design === "whatsapp" && AGENCY_ID && CONFIG.whatsappServiceUrl) {
+      const SERVICE_URL = CONFIG.whatsappServiceUrl;
+      const FALLBACK = CONFIG.whatsappFallback;
+      const TTL_MS = CONFIG.whatsappTTL;
 
-  function buildWaUrl(phone, text) {
-    const clean = phone.replace(/\D/g, "");
-    const encoded = text ? encodeURIComponent(text) : "";
-    return `https://api.whatsapp.com/send?phone=${clean}${encoded ? `&text=${encoded}` : ""}`;
-  }
+      const LS_KEY = `active_whatsapp_numbers_by_agency:${AGENCY_ID}`;
 
-  /********************************************
-   * Obtener números según USE_API
-   ********************************************/
-  async function fetchFromApi() {
-    const res = await fetchWithTimeout(API_URL, { headers: { "Cache-Control": "no-store" } }, 2500);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    return normalize(parseApiPayload(data));
-  }
+      function fetchWithTimeout(url, opt = {}, ms = 2500) {
+        const ctrl = new AbortController();
+        const id = setTimeout(() => ctrl.abort(), ms);
+        return fetch(url, { ...opt, signal: ctrl.signal }).finally(() => clearTimeout(id));
+      }
 
-  async function fetchFromJson() {
-    const res = await fetch(JSON_FILE);
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    return normalize(Array.isArray(data) ? data.map(item => {
-      if (typeof item === "string") return { phone: item, weight: 1 };
-      return item;
-    }) : []);
-  }
+      function getCache() {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || "null"); }
+        catch { return null; }
+      }
 
-  async function loadNumbers() {
-    const cached = getCache();
-    try {
-      const numbers = USE_API ? await fetchFromApi() : await fetchFromJson();
-      if (numbers.length) { setCache(numbers); return numbers; }
-      throw new Error("Empty list");
-    } catch (e) {
-      if (cached?.numbers?.length && Date.now() - (cached.ts || 0) < TTL_MS) return cached.numbers;
-      return normalize(FALLBACK);
+      function setCache(numbers) {
+        localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), numbers }));
+      }
+
+      function parseApiPayload(data) {
+        if (data && typeof data === "object" && ("number" in data) && data.number != null) {
+          return [{ phone: String(data.number), weight: 1 }];
+        }
+        if (data && typeof data === "object" && (typeof data.phone_number === "string" || typeof data.phone_number === "number")) {
+          return [{ phone: String(data.phone_number), weight: 1 }];
+        }
+        if (typeof data === "string") return [{ phone: data, weight: 1 }];
+
+        const arr =
+          (Array.isArray(data?.numbers) && data.numbers) ||
+          (Array.isArray(data?.phone_numbers) && data.phone_numbers) ||
+          (Array.isArray(data) && data) ||
+          [];
+
+        return arr.map(item => {
+          if (typeof item === "string") return { phone: item, weight: 1 };
+          const phone = String(item?.phone ?? item?.phone_number ?? "").trim();
+          const w = Number(item?.weight ?? 1);
+          return { phone, weight: isFinite(w) && w > 0 ? w : 1 };
+        });
+      }
+
+      function normalizeNumbers(list) {
+        return (Array.isArray(list) ? list : [])
+          .map(n => ({ phone: String(n.phone || "").trim(), weight: Number(n.weight || 1) }))
+          .filter(n => /^\+?\d{8,17}$/.test(n.phone) && n.weight > 0);
+      }
+
+      async function loadNumbersOnce() {
+        const cached = getCache();
+        try {
+          const res = await fetchWithTimeout(SERVICE_URL, { headers: { "Cache-Control": "no-store" } }, 2500);
+          if (!res.ok) throw new Error("HTTP " + res.status);
+
+          const data = await res.json();
+          const parsed = parseApiPayload(data);
+          const clean = normalizeNumbers(parsed);
+
+          if (clean.length) { setCache(clean); return clean; }
+          throw new Error("Invalid payload");
+        } catch (e) {
+          const ok = cached?.numbers?.length && (Date.now() - (cached.ts || 0) < TTL_MS);
+          if (ok) return cached.numbers;
+
+          if (FALLBACK?.length) return normalizeNumbers(FALLBACK);
+          return [];
+        }
+      }
+
+      function pickWeightedRandom(list) {
+        const total = list.reduce((s, it) => s + (Number(it.weight) || 1), 0);
+        let r = Math.random() * total;
+        for (const it of list) {
+          r -= (Number(it.weight) || 1);
+          if (r <= 0) return it;
+        }
+        return list[list.length - 1];
+      }
+
+      function buildWaUrl(phone, text = "") {
+        const msg = text ? encodeURIComponent(text) : "";
+        const cleanPhone = String(phone || "").replace(/\D/g, "");
+        return `https://api.whatsapp.com/send?phone=${cleanPhone}${msg ? `&text=${msg}` : ""}`;
+      }
+
+      let activeList = [];
+      loadNumbersOnce().then(list => { activeList = list; });
+
+      const btnContactar = document.getElementById("btnContactar");
+      if (btnContactar) {
+        btnContactar.addEventListener("click", (e) => {
+          e.preventDefault();
+          if (!activeList.length) return;
+
+          const chosen = pickWeightedRandom(activeList);
+          const mensaje = "¡Hola! Me pasás mi usuario 🚀";
+          location.href = buildWaUrl(chosen.phone, mensaje);
+        });
+      }
     }
-  }
-
-  /********************************************
-   * Redirección
-   ********************************************/
-  async function redirect() {
-    const list = await loadNumbers();
-    if (!list.length) {
-      document.querySelector(".loading").textContent = "Error: no hay números activos.";
-      return;
-    }
-    const chosen = pickWeightedRandom(list);
-    window.location.replace(buildWaUrl(chosen.phone, WA_MESSAGE));
-  }
-
-  redirect();
   </script>
 </body>
 </html>
