@@ -69,7 +69,7 @@ export default async function handler(req, res) {
   if (!Number.isInteger(agencyId) || agencyId <= 0) {
     return res.status(400).json({
       error: "AGENCY_REQUIRED",
-      message: "Debe enviarse ?agency= ",
+      message: "Debe enviarse ?agency=<id>",
     });
   }
 
