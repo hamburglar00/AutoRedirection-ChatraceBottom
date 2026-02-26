@@ -12,14 +12,41 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #0d0015;
-      color: #ffbc0f;
+      background: #000;
+      color: #f5f5f5;
       font-family: Arial, sans-serif;
       text-align: center;
       padding: 20px;
     }
-    .msg { font-size: 18px; font-weight: 600; }
-    .err { color: #e74c3c; }
+    .screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+    }
+    .hint {
+      font-size: 13px;
+      opacity: 0.8;
+    }
+    .error {
+      color: #ff6b6b;
+    }
+    .loader {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.15);
+      border-top-color: #25d366;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
   <script>
     function getAgencyId() {
@@ -41,35 +68,62 @@
     }
 
     const AGENCY_ID = getAgencyId();
-    const msgEl = document.getElementById("msg");
 
-    function show(msg, isError) {
-      document.body.innerHTML = "<p class=\"msg " + (isError ? "err" : "") + "\">" + msg + "</p>";
+    function setMessage(text, opts) {
+      const msgEl = document.getElementById("msg");
+      const hintEl = document.getElementById("hint");
+      if (!msgEl) return;
+      msgEl.textContent = text;
+      msgEl.classList.toggle("error", !!(opts && opts.error));
+      if (hintEl) {
+        hintEl.textContent = opts && opts.hint ? opts.hint : "";
+      }
     }
 
     if (!AGENCY_ID) {
-      document.addEventListener("DOMContentLoaded", () => {
-        show("Falta el parámetro de agencia en la URL.\nUsá un link del tipo /a/123 (por ejemplo: /a/8).", true);
+      document.addEventListener("DOMContentLoaded", function () {
+        setMessage(
+          "Falta el parámetro de agencia en la URL.",
+          {
+            error: true,
+            hint: "Usá un link del tipo /a/123 (por ejemplo: /a/8)."
+          }
+        );
       });
     } else {
-      document.addEventListener("DOMContentLoaded", () => {
-        show("Redireccionando a WhatsApp activo...");
+      document.addEventListener("DOMContentLoaded", function () {
+        setMessage("Redireccionando a WhatsApp activo...", {
+          hint: "Esto suele tardar solo un instante."
+        });
         fetch("/api/get-random-phone?agency=" + AGENCY_ID, { cache: "no-store" })
-          .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
-          .then(function(data) {
+          .then(function (r) {
+            return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status));
+          })
+          .then(function (data) {
             const phone = data && (data.number != null ? data.number : data.phone_number);
             if (!phone) throw new Error("Sin número");
+            setMessage("Abriendo WhatsApp...", { hint: "" });
             const url = buildWaUrl(phone, "¡Hola! Me pasás mi usuario 🚀");
             window.location.replace(url);
           })
-          .catch(function() {
-            show("No hay número disponible para esta agencia en este momento.", true);
+          .catch(function () {
+            setMessage(
+              "No hay número disponible para esta agencia en este momento.",
+              {
+                error: true,
+                hint: "Probá nuevamente en unos minutos o contactá a soporte."
+              }
+            );
           });
       });
     }
   </script>
 </head>
 <body>
-  <p class="msg" id="msg">Redireccionando a WhatsApp activo...</p>
+  <div class="screen">
+    <div class="loader" aria-hidden="true"></div>
+    <p class="title" id="msg">Conectando con la agencia...</p>
+    <p class="hint" id="hint"></p>
+  </div>
 </body>
 </html>
